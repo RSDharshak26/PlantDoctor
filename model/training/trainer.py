@@ -2,6 +2,7 @@ import torch
 from torchvision import datasets, transforms
 from torchvision.datasets import ImageFolder
 from torch.utils.data import DataLoader
+from torch.utils.data import random_split  # this is for randomly splitting data between training and evaluation 
 import torch.nn.functional as F
 import torch.nn as nn
 
@@ -18,6 +19,22 @@ transform = transforms.Compose([
 
 dataset = ImageFolder("C:\\Users\rsdha\\Documents\\GitHub\\PlantDoctor\\PlantVillage",transform = transform)
 
+
+
+# NEW: split dataset into train and validation sets (80/20 split)
+train_len = int(0.8 * len(dataset))           # NEW: number of training samples
+val_len = len(dataset) - train_len            # NEW: number of validation samples
+train_set, val_set = random_split(dataset, [train_len, val_len])  # NEW: perform the split
+
+
+
+# NEW: create DataLoaders for training and validation sets
+train_loader = DataLoader(train_set, batch_size=32, shuffle=True, num_workers=2)  # NEW
+val_loader   = DataLoader(val_set,   batch_size=32, shuffle=False, num_workers=2) # NEW
+
+
+num_classes = len(dataset.classes)
+
 # Create DataLoader
 dataloader = DataLoader(dataset, batch_size=32, shuffle=True, num_workers=2)
 
@@ -30,15 +47,26 @@ class DiseaseDetector(nn.Module):
         self.BatchNorm2d = nn.BatchNorm2d(16)
         self.MaxPool2d = nn.MaxPool2d(2, 2)
         self.Dropout = nn.Dropout(0.2)
-        
+        # INSERTING FLATTEN AND FCN LAYERS
+        self.Flatten = nn.Flatten()  # Flattens all dimensions except batch
+        self.fc1 = nn.Linear(16 * 111 * 111, 128)  # 16 channels, 111x111 each after pooling
+        self.fc2 = nn.Linear(128, num_classes)     # Output layer
     
     def forward(self, x):
-        x = self.conv1(x)
+        x = self.conv1(x) #A convolutional layer outputs a 3D tensor: (number of filters, height, width) for each image.
+
+
         x = self.BatchNorm2d(x)
         x = F.relu(x)
         x = self.MaxPool2d(x)
         x = self.Dropout(x)
-        # Continue forward pass
+        
+        # FLATTEN + FCN LAYERS
+        x = self.Flatten(x)
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x) # Fully connected (FC) layers expect a 1D vector per image as input.
+        
+        
         return x
     
     
@@ -63,7 +91,7 @@ for epoch in range(epochs):
     model.train()
     running_loss, running_correct = 0.0, 0 ## need to understand this 
     
-    for images,labels in dataloader:
+    for images,labels in dataloader:  ## iterate over every batch 
     #1. getting the predictions 
         outputs = model(images)
         loss = criterion(outputs,labels)
