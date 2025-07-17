@@ -15,7 +15,7 @@ transform = transforms.Compose([
         std=[0.229, 0.224, 0.225]      # Standard deviation for each RGB channel
     )
 ])
-dataset = ImageFolder("/content/PlantDoctor/PlantVillage", transform=transform)
+dataset = ImageFolder("../../PlantVillage", transform=transform)
 
 ##dataset = ImageFolder("C:\\Users\rsdha\\Documents\\GitHub\\PlantDoctor\\PlantVillage",transform = transform)
 
