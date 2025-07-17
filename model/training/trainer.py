@@ -35,8 +35,6 @@ val_loader   = DataLoader(val_set,   batch_size=32, shuffle=False, num_workers=2
 
 num_classes = len(dataset.classes)
 
-# Create DataLoader
-dataloader = DataLoader(dataset, batch_size=32, shuffle=True, num_workers=2)
 
 ##### Below is the architechture 
 class DiseaseDetector(nn.Module):
@@ -89,27 +87,68 @@ model = model.to(device)
     
 for epoch in range(epochs):
     model.train()
-    running_loss, running_correct = 0.0, 0 ## need to understand this 
-    
-    for images,labels in dataloader:  ## iterate over every batch 
-    #1. getting the predictions 
+    train_loss, train_correct = 0.0, 0
+    for images, labels in train_loader:
+        images, labels = images.to(device), labels.to(device)
         outputs = model(images)
-        loss = criterion(outputs,labels)
-        
-        optimizer.zero_grad()                                   # 3a. clear old grads
-        loss.backward()                                         # 3b. back-prop: compute grads
+        loss = criterion(outputs, labels)
+        optimizer.zero_grad()
+        loss.backward()
         optimizer.step()
-        
-         # ---------- metrics ----------
-        running_loss += loss.item() * images.size(0)            # sum batch loss × batch_size
-        preds = outputs.argmax(dim=1)                           # predicted class per sample
-        running_correct += (preds == labels).sum().item()       # correct predictions count
-
-    # -------- epoch summary --------
-    epoch_loss = running_loss / len(dataset)
-    epoch_acc  = running_correct / len(dataset)
-    print(f"[Epoch {epoch+1}/{epochs}]  loss: {epoch_loss:.4f}  acc: {epoch_acc:.4f}")
+        train_loss += loss.item() * images.size(0)
+        preds = outputs.argmax(dim=1)
+        train_correct += (preds == labels).sum().item()
+    train_loss /= len(train_set)
+    train_acc  = train_correct / len(train_set)
+    
+    
+    # --- Validation ---
+    model.eval()
+    val_loss, val_correct = 0.0, 0
+    with torch.no_grad():
+        for images, labels in val_loader:
+            images, labels = images.to(device), labels.to(device)
+            outputs = model(images)
+            loss = criterion(outputs, labels)
+            val_loss += loss.item() * images.size(0)
+            preds = outputs.argmax(dim=1)
+            val_correct += (preds == labels).sum().item()
+    val_loss /= len(val_set)
+    val_acc  = val_correct / len(val_set)
+    
+    
+    print(f"[Epoch {epoch+1}/{epochs}] "
+          f"Train loss: {train_loss:.4f} acc: {train_acc:.4f} | "
+          f"Val   loss: {val_loss:.4f} acc: {val_acc:.4f}")
     
     
 # ----------------- 4. SAVE WEIGHTS -----------------
 torch.save(model.state_dict(), "disease_detector_final.pth")     # for later inference    
+
+
+
+
+
+# --------------- INFERENCE CODE (do not modify anything above) ---------------
+
+from PIL import Image
+
+# load the trained model
+inference_model = DiseaseDetector()                          # new model instance
+inference_model.load_state_dict(torch.load("disease_detector_final.pth", map_location=device))  # load weights
+inference_model.to(device)                                   # move to device
+inference_model.eval()                                       # set to eval mode
+
+def predict(image_path: str) -> str:
+    # load and preprocess image
+    img = Image.open(image_path).convert("RGB")
+    x = transform(img).unsqueeze(0).to(device)               # reuse your existing 'transform'
+    with torch.no_grad():                                    # no gradient needed
+        logits = inference_model(x)
+    pred_idx = logits.argmax(dim=1).item()                   # index of highest logit
+    return dataset.classes[pred_idx]                         # map index to class name
+
+# Example usage:
+# result = predict("C:\\Users\\rsdha\\Documents\\GitHub\\PlantDoctor\\test.jpg")
+# print(f"Predicted class: {result}")
+
