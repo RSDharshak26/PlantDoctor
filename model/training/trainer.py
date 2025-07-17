@@ -16,8 +16,9 @@ transform = transforms.Compose([
     )
 ])
 
+dataset = ImageFolder("./PlantVillage", transform=transform)
 
-dataset = ImageFolder("C:\\Users\rsdha\\Documents\\GitHub\\PlantDoctor\\PlantVillage",transform = transform)
+##dataset = ImageFolder("C:\\Users\rsdha\\Documents\\GitHub\\PlantDoctor\\PlantVillage",transform = transform)
 
 
 
@@ -139,14 +140,27 @@ inference_model.load_state_dict(torch.load("disease_detector_final.pth", map_loc
 inference_model.to(device)                                   # move to device
 inference_model.eval()                                       # set to eval mode
 
+# Rename the transform to avoid shadowing
+preprocess = transform
+
 def predict(image_path: str) -> str:
-    # load and preprocess image
-    img = Image.open(image_path).convert("RGB")
-    x = transform(img).unsqueeze(0).to(device)               # reuse your existing 'transform'
-    with torch.no_grad():                                    # no gradient needed
-        logits = inference_model(x)
-    pred_idx = logits.argmax(dim=1).item()                   # index of highest logit
-    return dataset.classes[pred_idx]                         # map index to class name
+    # 1. Load as PIL
+    pil_img = Image.open(image_path).convert("RGB")
+    
+    # 2. Preprocess into a tensor
+    input_tensor = preprocess(pil_img)             # now clearly a torch.Tensor
+    
+    # 3. Add batch dimension & move to device
+    input_tensor = input_tensor.unsqueeze(0).to(device)  # type: ignore
+    
+    # 4. Inference
+    inference_model.eval()
+    with torch.no_grad():
+        logits = inference_model(input_tensor)
+    
+    # 5. Pick the most likely class
+    pred_idx = logits.argmax(dim=1).item()
+    return dataset.classes[pred_idx]                       # map index to class name
 
 # Example usage:
 # result = predict("C:\\Users\\rsdha\\Documents\\GitHub\\PlantDoctor\\test.jpg")
