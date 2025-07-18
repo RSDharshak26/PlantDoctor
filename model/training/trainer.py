@@ -7,7 +7,7 @@ import torch.nn.functional as F
 import torch.nn as nn
 
 import os
-data_dir = "/content/plant_dataset/plantvillage dataset/color"
+
 
 
 transform = transforms.Compose([
@@ -19,7 +19,7 @@ transform = transforms.Compose([
     )
 ])
 
-
+data_dir = "/content/plant_dataset/plantvillage dataset/color"
 dataset = ImageFolder(root=data_dir, transform=transform)
 ##dataset = ImageFolder("C:\\Users\rsdha\\Documents\\GitHub\\PlantDoctor\\PlantVillage",transform = transform)
 

@@ -4,7 +4,7 @@ import torch.optim as optim
 from torchvision import datasets, transforms, models
 from torch.utils.data import DataLoader, random_split
 from PIL import Image
-
+from torchvision.datasets import ImageFolder
 
 
 # 1a. Define how to transform each image before feeding to the model
@@ -20,8 +20,8 @@ transform = transforms.Compose([
     )
 ])
 
-# 1b. Load images from folders. Each subfolder name is treated as a class label.
-dataset = datasets.ImageFolder("PlantVillage", transform=transform)
+data_dir = "/content/plant_dataset/plantvillage dataset/color"
+dataset = ImageFolder(root=data_dir, transform=transform)
 
 # 1c. Split into training (80%) and validation (20%)
 train_size = int(0.8 * len(dataset))         # count of training examples
