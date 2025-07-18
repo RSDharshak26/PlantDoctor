@@ -6,6 +6,9 @@ from torch.utils.data import random_split  # this is for randomly splitting data
 import torch.nn.functional as F
 import torch.nn as nn
 
+import os
+data_dir = os.path.join("plant_dataset", "plantvillage dataset", "color")
+
 
 transform = transforms.Compose([
     transforms.Resize((224,224)),
@@ -15,7 +18,9 @@ transform = transforms.Compose([
         std=[0.229, 0.224, 0.225]      # Standard deviation for each RGB channel
     )
 ])
-dataset = ImageFolder("PlantVillage", transform=transform)
+
+
+dataset = ImageFolder(root=data_dir, transform=transform)
 ##dataset = ImageFolder("C:\\Users\rsdha\\Documents\\GitHub\\PlantDoctor\\PlantVillage",transform = transform)
 
 
