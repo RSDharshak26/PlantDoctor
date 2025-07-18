@@ -7,7 +7,7 @@ import torch.nn.functional as F
 import torch.nn as nn
 
 import os
-data_dir = os.path.join("plant_dataset", "plantvillage dataset", "color")
+data_dir = "/content/plant_dataset/plantvillage dataset/color"
 
 
 transform = transforms.Compose([
