@@ -1,0 +1,49 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Plant Doctor Backend - Lambda Function for Plant Disease Detection
+
+Parameters:
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues: [dev, staging, prod]
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 3008
+    Runtime: python3.9
+
+Resources:
+  PlantDoctorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'plant-doctor-${Environment}-backend'
+      CodeUri: .
+      Handler: lambda_function.lambda_handler
+      Environment:
+        Variables:
+          MODEL_BUCKET: !Sub 'plant-doctor-${Environment}-models-${AWS::AccountId}'
+          MODEL_KEY: fine_tuned_resnet18.pth
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Sub 'plant-doctor-${Environment}-models-${AWS::AccountId}'
+      Events:
+        InferenceApi:
+          Type: Api
+          Properties:
+            Path: /inference
+            Method: post
+            Cors:
+              AllowMethods: "'POST, OPTIONS'"
+              AllowHeaders: "'Content-Type'"
+              AllowOrigin: "'*'"
+
+Outputs:
+  ApiGatewayUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod'
+  
+  LambdaFunctionName:
+    Description: Lambda function name
+    Value: !Ref PlantDoctorFunction 
