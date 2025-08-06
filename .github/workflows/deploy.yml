@@ -33,7 +33,7 @@ jobs:
             --template-file cloudformation.yml \
             --stack-name plant-doctor-infrastructure \
             --parameter-overrides EnvName=prod \
-            --capabilities CAPABILITY_IAM \
+            --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
             --no-fail-on-empty-changeset
           
       - name: Update ECS service
