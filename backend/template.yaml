@@ -1,0 +1,73 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Plant Doctor Backend - Lambda Function for Plant Disease Detection
+
+Parameters:
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues: [dev, staging, prod]
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 3008
+    Runtime: python3.12
+
+Resources:
+  PlantDoctorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: 'plant-doctor-prod-backend'
+      CodeUri: .
+      Handler: routes.lambda_handler
+      Environment:
+        Variables:
+          MODEL_BUCKET: !Sub 'plant-doctor-${Environment}-models-${AWS::AccountId}'
+          MODEL_KEY: fine_tuned_resnet18.pth
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Sub 'plant-doctor-${Environment}-models-${AWS::AccountId}'
+
+  PlantDoctorApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: !Ref Environment
+      Cors:
+        AllowMethods: "'GET,POST'"
+        AllowHeaders: "'Content-Type'"
+        AllowOrigin: "'*'"
+
+  ReceiveFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'plant-doctor-${Environment}-receive'
+      CodeUri: .
+      Handler: routes.lambda_handler
+      Environment:
+        Variables:
+          MODEL_BUCKET: !Sub 'plant-doctor-${Environment}-models-${AWS::AccountId}'
+          MODEL_KEY: fine_tuned_resnet18.pth
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Sub 'plant-doctor-${Environment}-models-${AWS::AccountId}'
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref PlantDoctorApi
+            Path: /receive
+            Method: POST
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway URL
+    Value: !Sub "https://${PlantDoctorApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}"
+    Export:
+      Name: !Sub 'plant-doctor-${Environment}-api-url'
+  
+  LambdaFunctionName:
+    Description: Lambda function ARN
+    Value: !GetAtt PlantDoctorFunction.Arn
+    Export:
+      Name: 'plant-doctor-backend-LambdaFunctionName' 

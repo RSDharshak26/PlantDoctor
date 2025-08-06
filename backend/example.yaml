@@ -1,0 +1,307 @@
+
+
+AWSTemplateFormatVersion: "2010-09-09"   
+Description: "ECS Fargate cluster for my app _ VPC"
+
+Parameters:
+  EnvName:                               
+    Type: String
+    Default: prod
+  
+
+
+Resources:
+  # Note: ECR Repository 'my-frontend' already exists from previous deployment
+
+  AppCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "${EnvName}-cluster"
+
+
+  AppVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvName}-vpc"
+
+  
+  AppInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvName}-igw"
+
+  AppVPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref AppVPC
+      InternetGatewayId: !Ref AppInternetGateway
+
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref AppVPC
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [ 0, !GetAZs "" ]
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvName}-public-subnet"
+
+
+  PublicSubnetAZ2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref AppVPC
+      CidrBlock: 10.0.3.0/24
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [ 1, !GetAZs "" ]   # second AZ
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvName}-public-subnet-az2"
+
+
+  PrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref AppVPC
+      CidrBlock: 10.0.2.0/24
+      MapPublicIpOnLaunch: false
+      AvailabilityZone: !Select [ 0, !GetAZs "" ] 
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvName}-private-subnet"
+
+
+  PrivateSubnetAZ2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref AppVPC
+      CidrBlock: 10.0.4.0/24
+      MapPublicIpOnLaunch: false
+      AvailabilityZone: !Select [ 1, !GetAZs "" ]
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvName}-private-subnet-az2"
+
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "${EnvName}-alb-sg"
+      VpcId: !Ref AppVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0    # allow HTTP from anywhere
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0    # allow HTTPS from anywhere
+      SecurityGroupEgress:
+        - IpProtocol: -1       # allow all outbound
+          FromPort: 0
+          ToPort: 0
+          CidrIp: 0.0.0.0/0
+
+  # 7) Security Group for Fargate tasks (containers)
+  ContainerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "${EnvName}-container-sg"
+      VpcId: !Ref AppVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          SourceSecurityGroupId: !Ref ALBSecurityGroup  # only ALB on port 3000
+      SecurityGroupEgress:
+        - IpProtocol: -1       # containers can reach out anywhere (e.g. package repos)
+          FromPort: 0
+          ToPort: 0
+          CidrIp: 0.0.0.0/0
+
+  FrontendTaskDef:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "${EnvName}-frontend-task"
+      Cpu: "512"
+      Memory: "1024"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: frontend
+          Image: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/my-frontend:latest"
+          PortMappings:
+            - ContainerPort: 3000
+          Essential: true
+          Environment:
+            - Name: REACT_APP_API_URL
+              Value: "https://313f92h3dh.execute-api.us-east-1.amazonaws.com/Prod/receive"
+            - Name: NEXT_PUBLIC_SUPABASE_URL
+              Value: "https://qkwviicbpbkkafstuxhx.supabase.co"
+            - Name: NEXT_PUBLIC_SUPABASE_ANON_KEY
+              Value: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFrd3ZpaWNicGJra2Fmc3R1eHhoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDkxMzM4OTIsImV4cCI6MjA2NDcwOTg5Mn0.f6AvhycerXoCdCAhvpSOLW4N5_hoFsmnL_CcA8iri0s"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref "AWS::Region"
+              awslogs-stream-prefix: frontend
+
+
+
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${EnvName}-ecs-exec-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  # CloudWatch Log Group for both frontend and backend logs
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecs/${EnvName}"
+      RetentionInDays: 7
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref AppVPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvName}-public-rt"
+
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref AppInternetGateway
+
+  
+  PublicSubnetRouteTableAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnetAZ2RouteTableAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetAZ2
+      RouteTableId: !Ref PublicRouteTable
+
+
+
+  AppLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub "${EnvName}-alb"
+      Subnets:
+        - !Ref PublicSubnet
+        - !Ref PublicSubnetAZ2
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Scheme: internet-facing
+      Type: application
+
+  # -- Frontend Target Group (port 3000)
+  FrontendTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "${EnvName}-frontend-tg"
+      Port: 3000
+      Protocol: HTTP
+      VpcId: !Ref AppVPC
+      TargetType: ip
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: "3000"
+      HealthCheckPath: "/"
+      Matcher:
+        HttpCode: "200"
+
+
+
+
+
+  FrontendService:
+    Type: AWS::ECS::Service
+    DependsOn: 
+      - HTTPListener
+    Properties:
+      ServiceName: !Sub "${EnvName}-frontend-svc"
+      Cluster: !Ref AppCluster
+      TaskDefinition: !Ref FrontendTaskDef
+      DesiredCount: 1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - !Ref PublicSubnet
+            - !Ref PublicSubnetAZ2
+          SecurityGroups:
+            - !Ref ContainerSecurityGroup
+          AssignPublicIp: ENABLED
+      LoadBalancers:
+        - ContainerName: frontend
+          ContainerPort: 3000
+          TargetGroupArn: !Ref FrontendTargetGroup
+
+
+
+
+  HTTPListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    DependsOn: AppLoadBalancer
+    Properties:
+      LoadBalancerArn: !Ref AppLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref FrontendTargetGroup
+
+
+  # ========================================
+  # INFRASTRUCTURE COMPONENTS ONLY
+  # ========================================
+  # Note: DynamoDB tables and WebSocket API are created by SAM deployment
+  # This file focuses on ECS, VPC, Load Balancer infrastructure
+
+Outputs:
+  ClusterName:
+    Value: !Ref AppCluster
+    Description: "Name of the ECS cluster"
+  
+  ApplicationURL:
+    Value: !Sub "http://${AppLoadBalancer.DNSName}"
+    Description: "AWS Load Balancer URL for testing"
+    Export:
+      Name: !Sub "${EnvName}-frontend-url"
+
+  ECRRepositoryURI:
+    Value: "505489717400.dkr.ecr.us-east-1.amazonaws.com/my-frontend"
+    Description: "ECR Repository URI for Docker images (existing repository)"
+    Export:
+      Name: !Sub "${EnvName}-ecr-uri"
+
+
