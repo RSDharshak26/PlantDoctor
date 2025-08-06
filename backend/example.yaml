@@ -1,23 +1,24 @@
+
+
 AWSTemplateFormatVersion: "2010-09-09"   
-Description: "Plant Doctor - Complete Infrastructure with ECS Frontend and Lambda Backend"
+Description: "ECS Fargate cluster for my app _ VPC"
 
 Parameters:
   EnvName:                               
     Type: String
     Default: prod
+  
+
 
 Resources:
-  # ========================================
-  # ECS CLUSTER
-  # ========================================
+  # Note: ECR Repository 'my-frontend' already exists from previous deployment
+
   AppCluster:
     Type: AWS::ECS::Cluster
     Properties:
-      ClusterName: !Sub "${EnvName}-plant-doctor-cluster"
+      ClusterName: !Sub "${EnvName}-cluster"
 
-  # ========================================
-  # VPC AND NETWORKING
-  # ========================================
+
   AppVPC:
     Type: AWS::EC2::VPC
     Properties:
@@ -26,20 +27,22 @@ Resources:
       EnableDnsHostnames: true
       Tags:
         - Key: Name
-          Value: !Sub "${EnvName}-plant-doctor-vpc"
+          Value: !Sub "${EnvName}-vpc"
 
+  
   AppInternetGateway:
     Type: AWS::EC2::InternetGateway
     Properties:
       Tags:
         - Key: Name
-          Value: !Sub "${EnvName}-plant-doctor-igw"
+          Value: !Sub "${EnvName}-igw"
 
   AppVPCGatewayAttachment:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties:
       VpcId: !Ref AppVPC
       InternetGatewayId: !Ref AppInternetGateway
+
 
   PublicSubnet:
     Type: AWS::EC2::Subnet
@@ -50,7 +53,8 @@ Resources:
       AvailabilityZone: !Select [ 0, !GetAZs "" ]
       Tags:
         - Key: Name
-          Value: !Sub "${EnvName}-plant-doctor-public-subnet"
+          Value: !Sub "${EnvName}-public-subnet"
+
 
   PublicSubnetAZ2:
     Type: AWS::EC2::Subnet
@@ -58,57 +62,76 @@ Resources:
       VpcId: !Ref AppVPC
       CidrBlock: 10.0.3.0/24
       MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [ 1, !GetAZs "" ]   # second AZ
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvName}-public-subnet-az2"
+
+
+  PrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref AppVPC
+      CidrBlock: 10.0.2.0/24
+      MapPublicIpOnLaunch: false
+      AvailabilityZone: !Select [ 0, !GetAZs "" ] 
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvName}-private-subnet"
+
+
+  PrivateSubnetAZ2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref AppVPC
+      CidrBlock: 10.0.4.0/24
+      MapPublicIpOnLaunch: false
       AvailabilityZone: !Select [ 1, !GetAZs "" ]
       Tags:
         - Key: Name
-          Value: !Sub "${EnvName}-plant-doctor-public-subnet-az2"
+          Value: !Sub "${EnvName}-private-subnet-az2"
 
-  # ========================================
-  # SECURITY GROUPS
-  # ========================================
   ALBSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: !Sub "${EnvName}-plant-doctor-alb-sg"
+      GroupDescription: !Sub "${EnvName}-alb-sg"
       VpcId: !Ref AppVPC
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 80
           ToPort: 80
-          CidrIp: 0.0.0.0/0
+          CidrIp: 0.0.0.0/0    # allow HTTP from anywhere
         - IpProtocol: tcp
           FromPort: 443
           ToPort: 443
-          CidrIp: 0.0.0.0/0
+          CidrIp: 0.0.0.0/0    # allow HTTPS from anywhere
       SecurityGroupEgress:
-        - IpProtocol: -1
+        - IpProtocol: -1       # allow all outbound
           FromPort: 0
           ToPort: 0
           CidrIp: 0.0.0.0/0
 
+  # 7) Security Group for Fargate tasks (containers)
   ContainerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: !Sub "${EnvName}-plant-doctor-container-sg"
+      GroupDescription: !Sub "${EnvName}-container-sg"
       VpcId: !Ref AppVPC
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 3000
           ToPort: 3000
-          SourceSecurityGroupId: !Ref ALBSecurityGroup
+          SourceSecurityGroupId: !Ref ALBSecurityGroup  # only ALB on port 3000
       SecurityGroupEgress:
-        - IpProtocol: -1
+        - IpProtocol: -1       # containers can reach out anywhere (e.g. package repos)
           FromPort: 0
           ToPort: 0
           CidrIp: 0.0.0.0/0
 
-  # ========================================
-  # ECS TASK DEFINITION AND SERVICE
-  # ========================================
   FrontendTaskDef:
     Type: AWS::ECS::TaskDefinition
     Properties:
-      Family: !Sub "${EnvName}-plant-doctor-frontend-task"
+      Family: !Sub "${EnvName}-frontend-task"
       Cpu: "512"
       Memory: "1024"
       NetworkMode: awsvpc
@@ -117,13 +140,17 @@ Resources:
       ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
       ContainerDefinitions:
         - Name: frontend
-          Image: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/plant-doctor-frontend:latest"
+          Image: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/my-frontend:latest"
           PortMappings:
             - ContainerPort: 3000
           Essential: true
           Environment:
             - Name: REACT_APP_API_URL
-              Value: !ImportValue 'plant-doctor-prod-api-url'
+              Value: "https://313f92h3dh.execute-api.us-east-1.amazonaws.com/Prod/receive"
+            - Name: NEXT_PUBLIC_SUPABASE_URL
+              Value: "https://qkwviicbpbkkafstuxhx.supabase.co"
+            - Name: NEXT_PUBLIC_SUPABASE_ANON_KEY
+              Value: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFrd3ZpaWNicGJra2Fmc3R1eHhoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDkxMzM4OTIsImV4cCI6MjA2NDcwOTg5Mn0.f6AvhycerXoCdCAhvpSOLW4N5_hoFsmnL_CcA8iri0s"
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -131,10 +158,12 @@ Resources:
               awslogs-region: !Ref "AWS::Region"
               awslogs-stream-prefix: frontend
 
+
+
   ECSTaskExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${EnvName}-plant-doctor-ecs-exec-role"
+      RoleName: !Sub "${EnvName}-ecs-exec-role"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -145,22 +174,21 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
 
+  # CloudWatch Log Group for both frontend and backend logs
   LogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub "/ecs/${EnvName}-plant-doctor"
+      LogGroupName: !Sub "/ecs/${EnvName}"
       RetentionInDays: 7
 
-  # ========================================
-  # ROUTING
-  # ========================================
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
       VpcId: !Ref AppVPC
       Tags:
         - Key: Name
-          Value: !Sub "${EnvName}-plant-doctor-public-rt"
+          Value: !Sub "${EnvName}-public-rt"
+
 
   PublicRoute:
     Type: AWS::EC2::Route
@@ -169,6 +197,7 @@ Resources:
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref AppInternetGateway
 
+  
   PublicSubnetRouteTableAssoc:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
@@ -181,13 +210,12 @@ Resources:
       SubnetId: !Ref PublicSubnetAZ2
       RouteTableId: !Ref PublicRouteTable
 
-  # ========================================
-  # LOAD BALANCER
-  # ========================================
+
+
   AppLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
-      Name: !Sub "${EnvName}-plant-doctor-alb"
+      Name: !Sub "${EnvName}-alb"
       Subnets:
         - !Ref PublicSubnet
         - !Ref PublicSubnetAZ2
@@ -196,10 +224,11 @@ Resources:
       Scheme: internet-facing
       Type: application
 
+  # -- Frontend Target Group (port 3000)
   FrontendTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: !Sub "${EnvName}-plant-doctor-frontend-tg"
+      Name: !Sub "${EnvName}-frontend-tg"
       Port: 3000
       Protocol: HTTP
       VpcId: !Ref AppVPC
@@ -210,12 +239,16 @@ Resources:
       Matcher:
         HttpCode: "200"
 
+
+
+
+
   FrontendService:
     Type: AWS::ECS::Service
     DependsOn: 
       - HTTPListener
     Properties:
-      ServiceName: !Sub "${EnvName}-plant-doctor-frontend-svc"
+      ServiceName: !Sub "${EnvName}-frontend-svc"
       Cluster: !Ref AppCluster
       TaskDefinition: !Ref FrontendTaskDef
       DesiredCount: 1
@@ -233,6 +266,9 @@ Resources:
           ContainerPort: 3000
           TargetGroupArn: !Ref FrontendTargetGroup
 
+
+
+
   HTTPListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
     DependsOn: AppLoadBalancer
@@ -244,11 +280,12 @@ Resources:
         - Type: forward
           TargetGroupArn: !Ref FrontendTargetGroup
 
+
   # ========================================
-  # LAMBDA BACKEND (for reference - deployed via SAM)
+  # INFRASTRUCTURE COMPONENTS ONLY
   # ========================================
-  # Note: Lambda function is deployed via SAM template in backend/
-  # This section is for reference only
+  # Note: DynamoDB tables and WebSocket API are created by SAM deployment
+  # This file focuses on ECS, VPC, Load Balancer infrastructure
 
 Outputs:
   ClusterName:
@@ -257,30 +294,14 @@ Outputs:
   
   ApplicationURL:
     Value: !Sub "http://${AppLoadBalancer.DNSName}"
-    Description: "Plant Doctor Frontend URL"
+    Description: "AWS Load Balancer URL for testing"
     Export:
-      Name: !Sub "${EnvName}-plant-doctor-frontend-url"
+      Name: !Sub "${EnvName}-frontend-url"
 
   ECRRepositoryURI:
-    Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/plant-doctor-frontend"
-    Description: "ECR Repository URI for Plant Doctor frontend"
+    Value: "505489717400.dkr.ecr.us-east-1.amazonaws.com/my-frontend"
+    Description: "ECR Repository URI for Docker images (existing repository)"
     Export:
-      Name: !Sub "${EnvName}-plant-doctor-ecr-uri"
+      Name: !Sub "${EnvName}-ecr-uri"
 
-  VPCId:
-    Description: VPC ID
-    Value: !Ref AppVPC
-    Export:
-      Name: !Sub "${EnvName}-plant-doctor-vpc-id"
 
-  PublicSubnet1:
-    Description: Public Subnet 1 ID
-    Value: !Ref PublicSubnet
-    Export:
-      Name: !Sub "${EnvName}-plant-doctor-public-subnet-1"
-
-  PublicSubnet2:
-    Description: Public Subnet 2 ID
-    Value: !Ref PublicSubnetAZ2
-    Export:
-      Name: !Sub "${EnvName}-plant-doctor-public-subnet-2" 

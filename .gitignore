@@ -1,3 +1,6 @@
 PlantVillage/
 
 node_modules/
+
+
+\.aws-sam

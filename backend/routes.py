@@ -74,28 +74,71 @@ def run_inference(image_tensor):
 # Load model when server starts
 load_model()
 
-@inference.route("/inference", methods=["GET", "POST"])
+@inference.route("/inference", methods=["GET", "POST", "OPTIONS"])
 def process():
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        from flask import make_response
+        resp = make_response('')
+        resp.headers['Access-Control-Allow-Origin'] = '*'
+        resp.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+        resp.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        return resp
+    
+    # Handle GET request
+    if request.method == 'GET':
+        from flask import make_response
+        response = {"message": "Plant Doctor API", "status": "ready", "endpoint": "/inference"}
+        resp = make_response(response)
+        resp.headers['Access-Control-Allow-Origin'] = '*'
+        resp.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+        resp.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        return resp
+    
+    # Handle POST request
     try:
         # Get uploaded file
         file = request.files.get("file")
         if not file:
-            return jsonify({"error": "No file uploaded"}), 400
+            from flask import make_response
+            resp = make_response({"error": "No file uploaded", "status": "error"})
+            resp.headers['Access-Control-Allow-Origin'] = '*'
+            resp.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+            resp.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+            return resp
+        print("file received")
         
         # Preprocess image
         image_tensor = preprocess_image(file)
         
         # Run inference
         predicted_class, confidence = run_inference(image_tensor)
+        print("inference done")
+        print("predicted_class : ", predicted_class)
         
         # Return results
-        return jsonify({
+        from flask import make_response
+        response = {
             "prediction": predicted_class,
             "confidence": round(confidence, 3),
             "status": "success"
-        })
+        }
+        resp = make_response(response)
+        resp.headers['Access-Control-Allow-Origin'] = '*'
+        resp.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+        resp.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        return resp
         
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        from flask import make_response
+        resp = make_response({"error": str(e), "status": "error"})
+        resp.headers['Access-Control-Allow-Origin'] = '*'
+        resp.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+        resp.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        return resp
 
 
+# Lambda entry point
+def lambda_handler(event, context):
+    # This will be your Lambda URL endpoint
+    return process()
