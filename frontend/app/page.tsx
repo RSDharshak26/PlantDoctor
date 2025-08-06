@@ -80,7 +80,7 @@ return (
                             <div className="border-2 border-dashed border-green-300 rounded-xl p-8 hover:border-green-400 transition-colors">
                                 <div className="text-6xl mb-4">📸</div>
                                 <p className="text-lg font-medium text-gray-700 mb-2">
-                                    Click to upload plant image . Image only
+                                    Click to upload plant image . Image only please
                                 </p>
                                 <p className="text-sm text-gray-500">
                                     Supports JPG, PNG, GIF up to 10MB
